@@ -34,7 +34,7 @@ type
 
   }
 
-  TFileAppenderOption = (IncludePID);
+  TFileAppenderOption = (IncludePID, DateAsFileName, NoRotate);
   TFileAppenderOptions = set of TFileAppenderOption;
   TFileAppenderLogRow = reference to procedure(const LogItem: TLogItem; out LogRow: string);
 
@@ -122,20 +122,26 @@ var
   lPath: string;
   lFormat: string;
 begin
+  lFormat := fLogFileNameFormat;
+  if TFileAppenderOption.DateAsFileName in fFileAppenderOptions then
+  begin
+    lModuleName := FormatDateTime('yyyyMMdd', Date);
+  end
+  else
+  begin
 {$IF Defined(Android)}
-  lModuleName := TAndroidHelper.ApplicationTitle.Replace(' ', '_', [rfReplaceAll]);
+    lModuleName := TAndroidHelper.ApplicationTitle.Replace(' ', '_', [rfReplaceAll]);
 {$ENDIF}
 {$IF Defined(MSWindows)}
-  lModuleName := TPath.GetFileNameWithoutExtension(GetModuleName(HInstance));
+    lModuleName := TPath.GetFileNameWithoutExtension(GetModuleName(HInstance));
 {$ENDIF}
 {$IF Defined(IOS) or Defined(MacOS)}
-  raise Exception.Create('Platform not supported');
+    raise Exception.Create('Platform not supported');
 {$ENDIF}
-  lFormat := fLogFileNameFormat;
 
+  end;
   if TFileAppenderOption.IncludePID in fFileAppenderOptions then
     lModuleName := lModuleName + '_pid_' + IntToStr(CurrentProcessId).PadLeft(6, '0');
-
   lPath := fLogsFolder;
   lExt := Format(lFormat, [lModuleName, aFileNumber, aTag]);
   Result := TPath.Combine(lPath, lExt);
@@ -192,7 +198,8 @@ begin
     InternalWriteLog(lWriter, lLogRow);
   end;
 
-  if lWriter.BaseStream.Size > fMaxFileSizeInKiloByte * 1024 then
+  if not (TFileAppenderOption.NoRotate in fFileAppenderOptions) and
+     (lWriter.BaseStream.Size > fMaxFileSizeInKiloByte * 1024) then
   begin
     RotateLog(aLogItem, lWriter);
   end;
