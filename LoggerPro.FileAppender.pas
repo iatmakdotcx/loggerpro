@@ -41,10 +41,18 @@ type
   { @abstract(The default file appender)
     To learn how to use this appender, check the sample @code(file_appender.dproj)
   }
+  TWritersAttr = class(TObject)
+     Writer:TStreamWriter;
+     Path:string;
+     Cdate:TDateTime;
+     constructor Create(_Writer:TStreamWriter;_Path:string);
+     destructor Destroy;override;
+  end;
+
   TLoggerProFileAppender = class(TLoggerProAppenderBase)
   private
     fFormatSettings: TFormatSettings;
-    fWritersDictionary: TObjectDictionary<string, TStreamWriter>;
+    fWritersDictionary: TObjectDictionary<string, TWritersAttr>;
     fMaxBackupFileCount: Integer;
     fMaxFileSizeInKiloByte: Integer;
     fLogFormat: string;
@@ -162,7 +170,7 @@ begin
     TDirectory.CreateDirectory(fLogsFolder);
 
   fFormatSettings := LoggerPro.GetDefaultFormatSettings;
-  fWritersDictionary := TObjectDictionary<string, TStreamWriter>.Create([doOwnsValues]);
+  fWritersDictionary := TObjectDictionary<string, TWritersAttr>.Create([doOwnsValues]);
 end;
 
 procedure TLoggerProFileAppender.TearDown;
@@ -181,10 +189,23 @@ var
   lWriter: TStreamWriter;
   lLogFileName: string;
   lLogRow: string;
+  lWritersAttr:TWritersAttr;
 begin
-  if not fWritersDictionary.TryGetValue(aLogItem.LogTag, lWriter) then
+  if not fWritersDictionary.TryGetValue(aLogItem.LogTag, lWritersAttr) then
   begin
     AddWriter(aLogItem, lWriter, lLogFileName);
+  end
+  else
+  begin
+    if (TFileAppenderOption.DateAsFileName in fFileAppenderOptions) and (Trunc(lWritersAttr.Cdate) <> Trunc(Now)) then
+    begin
+      fWritersDictionary.Remove(aLogItem.LogTag);
+      AddWriter(aLogItem, lWriter, lLogFileName);
+    end
+    else
+    begin
+      lWriter := lWritersAttr.Writer;
+    end;
   end;
 
   if not Assigned(fOnLogRow) then
@@ -269,7 +290,7 @@ procedure TLoggerProFileAppender.AddWriter(const aLogItem: TLogItem; var lWriter
 begin
   lLogFileName := GetLogFileName(aLogItem.LogTag, 0);
   lWriter := CreateWriter(lLogFileName);
-  fWritersDictionary.Add(aLogItem.LogTag, lWriter);
+  fWritersDictionary.Add(aLogItem.LogTag, TWritersAttr.Create(lWriter, lLogFileName));
 end;
 
 constructor TLoggerProFileAppender.Create(aMaxBackupFileCount: Integer; aMaxFileSizeInKiloByte: Integer; aLogsFolder: string;
@@ -329,6 +350,21 @@ begin
       end;
     end;
   end;
+end;
+
+{ TWritersAttr }
+
+constructor TWritersAttr.Create(_Writer: TStreamWriter; _Path: string);
+begin
+  Writer := _Writer;
+  Path := _Path;
+  Cdate := Now;
+end;
+
+destructor TWritersAttr.Destroy;
+begin
+  Writer.Free;
+  inherited;
 end;
 
 end.
